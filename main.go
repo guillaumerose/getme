@@ -91,17 +91,18 @@ func main() {
 	rootCmd.AddCommand(&cobra.Command{
 		Use: "Pinata",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 6 {
+			if len(args) != 7 {
 				return errors.New("A commit and platform must be provided")
 			}
 			jenkins := args[0]
 			user := args[1]
 			token := args[2]
 			bucket := args[3]
-			commit := args[4]
-			platform := args[5]
+			isocommit := args[4]
+			commit := args[5]
+			platform := args[6]
 
-			return Pinata(jenkins, user, token, bucket, commit, platform, options)
+			return Pinata(jenkins, user, token, bucket, isocommit, commit, platform, options)
 		},
 	})
 
@@ -112,11 +113,12 @@ func main() {
 
 // Download retrieves an url from the cache or download it if it's absent.
 // Then print the path to that file to stdout.
-func Pinata(jenkins, user, token, bucket, commit, platform string, options files.Options) error {
-	binary := fmt.Sprintf("https://storage.googleapis.com/%s/%s/docker-for-%s.iso.tgz", bucket, commit, platform)
+func Pinata(jenkins, user, token, bucket, isocommit, commit, platform string, options files.Options) error {
+	binary := fmt.Sprintf("https://storage.googleapis.com/%s/%s/docker-for-%s.iso.tgz", bucket, isocommit, platform)
 	err := Download(binary, options)
 	if err != nil {
 		log.SetOutput(os.Stdout)
+		log.Println("Building", binary)
 		log.Println("Trigger jenkins build")
 		jenkins := gojenkins.CreateJenkins(nil, jenkins, user, token)
 		_, err := jenkins.Init()
