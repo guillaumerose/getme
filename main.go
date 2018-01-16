@@ -12,6 +12,9 @@ import (
 	"github.com/dgageot/getme/zip"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
+	"github.com/bndr/gojenkins"
+	"time"
+	"os"
 )
 
 var (
@@ -85,9 +88,97 @@ func main() {
 		},
 	})
 
+	rootCmd.AddCommand(&cobra.Command{
+		Use: "Pinata",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 6 {
+				return errors.New("A commit and platform must be provided")
+			}
+			jenkins := args[0]
+			user := args[1]
+			token := args[2]
+			bucket := args[3]
+			commit := args[4]
+			platform := args[5]
+
+			return Pinata(jenkins, user, token, bucket, commit, platform, options)
+		},
+	})
+
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// Download retrieves an url from the cache or download it if it's absent.
+// Then print the path to that file to stdout.
+func Pinata(jenkins, user, token, bucket, commit, platform string, options files.Options) error {
+	binary := fmt.Sprintf("https://storage.googleapis.com/%s/%s/docker-for-%s.iso.tgz", bucket, commit, platform)
+	err := Download(binary, options)
+	if err != nil {
+		log.SetOutput(os.Stdout)
+		log.Println("Trigger jenkins build")
+		jenkins := gojenkins.CreateJenkins(nil, jenkins, user, token)
+		_, err := jenkins.Init()
+		if err != nil {
+			return err
+		}
+
+		job, err := jenkins.GetJob(fmt.Sprintf("pinata-%s-iso", platform))
+		if err != nil {
+			return err
+		}
+
+		taskId, err := job.InvokeSimple(map[string]string{
+			"COMMIT_ID": commit,
+		})
+		if err != nil {
+			return err
+		}
+
+		log.Println("Waiting for queue")
+		for {
+			queue, err := jenkins.GetQueue()
+			if err != nil {
+				return err
+			}
+			task := queue.GetTaskById(taskId)
+			if task == nil {
+				break
+			}
+			time.Sleep(time.Second)
+		}
+
+		ids, err := job.GetAllBuildIds()
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			build, err := job.GetBuild(id.Number)
+			if err != nil {
+				return err
+			}
+			if build.GetParameters()[0].Value == commit {
+				for {
+					if !build.IsRunning() {
+						break
+					}
+					log.Println("Job is running, waiting...")
+					time.Sleep(5 * time.Second)
+					build, err = job.GetBuild(id.Number)
+					if err != nil {
+						return err
+					}
+				}
+				if build.IsGood() {
+					return Download(binary, options)
+				}
+				return fmt.Errorf("Build failed")
+			}
+		}
+		return fmt.Errorf("Build not found")
+	}
+	return nil
 }
 
 // Download retrieves an url from the cache or download it if it's absent.

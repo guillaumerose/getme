@@ -10,7 +10,7 @@ import (
 	"github.com/dgageot/getme/appveyor"
 	"github.com/dgageot/getme/github"
 	http_headers "github.com/dgageot/getme/headers"
-	minio "github.com/minio/minio-go"
+	"github.com/minio/minio-go"
 	"github.com/pkg/errors"
 )
 
